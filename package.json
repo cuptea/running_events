@@ -1,0 +1,13 @@
+{
+  "name": "running-events-finder",
+  "version": "1.0.0",
+  "description": "Find upcoming running events near a city or location.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
