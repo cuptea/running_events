@@ -1,50 +1,45 @@
 # Running Events Finder
 
-A small web app where users can enter a city/location and get upcoming nearby running events.
+A web app where users can enter a city/location and get upcoming running events in Germany.
 
 ## What it does
 
-- Accepts a free-form location (city, neighborhood, country, etc.).
-- Geocodes the location using OpenStreetMap Nominatim (with Open-Meteo geocoder fallback).
-- Pulls global running event data from parkrun's public events directory.
-- Computes nearest events and returns the top 25 nearest options.
-- Shows the next scheduled weekly event date (next Saturday).
+- Accepts a free-form location (city, region, etc.).
+- Uses **Google Programmable Search API** to search for running events in Germany.
+- Returns up to 10 event search results with links and extracted date (if present).
+
+## Required environment variables
+
+You must provide both:
+
+- `GOOGLE_API_KEY`
+- `GOOGLE_CSE_ID`
+
+Without these, `/api/events` returns a configuration error.
 
 ## Run locally
 
 ```bash
-npm install
+export GOOGLE_API_KEY="your-api-key"
+export GOOGLE_CSE_ID="your-cse-id"
 npm start
 ```
 
 App runs on `http://localhost:3000` by default.
 
-## Deploy publicly
-
-I can’t directly deploy from this environment because there is no access to your Render/Railway/Fly/Vercel account tokens.
-
-### Fastest option: Render (free tier)
-
-1. Push this repo to GitHub.
-2. In Render, click **New +** → **Blueprint**.
-3. Select your repo and deploy; Render will use `render.yaml` automatically.
-
-Alternative (manual web service settings):
-- Build command: `npm install`
-- Start command: `npm start`
-- Health check path: `/health`
-
-### Railway/Fly/VPS
-
-- Start command: `npm start`
-- Port: provided by `PORT` environment variable.
-
 ## API
 
-`GET /api/events?location=<query>&maxDistanceMiles=<number>`
+`GET /api/events?location=<query>`
 
 Example:
 
 ```bash
-curl "http://localhost:3000/api/events?location=Seattle&maxDistanceMiles=50"
+curl "http://localhost:3000/api/events?location=Munich"
 ```
+
+## Deploy publicly
+
+- Build command: `npm install`
+- Start command: `npm start`
+- Health check path: `/health`
+- Set `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` in your hosting provider environment settings.
