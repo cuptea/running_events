@@ -21,9 +21,21 @@ App runs on `http://localhost:3000` by default.
 
 ## Deploy publicly
 
-This project works on platforms like **Render**, **Railway**, **Fly.io**, or any VPS that can run Node.js.
+I can’t directly deploy from this environment because there is no access to your Render/Railway/Fly/Vercel account tokens.
 
+### Fastest option: Render (free tier)
+
+1. Push this repo to GitHub.
+2. In Render, click **New +** → **Blueprint**.
+3. Select your repo and deploy; Render will use `render.yaml` automatically.
+
+Alternative (manual web service settings):
 - Build command: `npm install`
+- Start command: `npm start`
+- Health check path: `/health`
+
+### Railway/Fly/VPS
+
 - Start command: `npm start`
 - Port: provided by `PORT` environment variable.
 

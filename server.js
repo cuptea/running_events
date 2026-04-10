@@ -7,7 +7,10 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const PARKRUN_EVENTS_URL = "https://images.parkrun.com/events.json";
 const USER_AGENT =
-  "running-events-finder/1.0 (https://example.com; contact: admin@example.com)";
+  process.env.APP_USER_AGENT ||
+  "running-events-finder/1.1 (https://example.com; contact: admin@example.com)";
+const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -17,6 +20,11 @@ const MIME_TYPES = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
+};
+
+const eventCache = {
+  events: null,
+  fetchedAt: 0,
 };
 
 function toRadians(degrees) {
@@ -89,7 +97,26 @@ async function geocodeLocation(location) {
   };
 }
 
+function inferDetailUrl(event, country) {
+  if (event?.url) {
+    return event.url;
+  }
+
+  if (event?.website) {
+    return event.website;
+  }
+
+  const host = country?.urlFragment ? `parkrun.${country.urlFragment}` : "parkrun.com";
+  const shortname = event?.shortname || "";
+  return `https://www.${host}/${shortname}`;
+}
+
 async function fetchParkrunEvents() {
+  const now = Date.now();
+  if (eventCache.events && now - eventCache.fetchedAt < EVENT_CACHE_TTL_MS) {
+    return eventCache.events;
+  }
+
   const response = await fetch(PARKRUN_EVENTS_URL, {
     headers: {
       "User-Agent": USER_AGENT,
@@ -120,10 +147,13 @@ async function fetchParkrunEvents() {
         country: countryName,
         latitude: Number(event.lat),
         longitude: Number(event.lon),
-        detailUrl: `https://www.parkrun.${country.urlFragment || "com"}/${event.shortname}`,
+        detailUrl: inferDetailUrl(event, country),
       });
     }
   }
+
+  eventCache.events = events;
+  eventCache.fetchedAt = now;
 
   return events;
 }
@@ -163,6 +193,12 @@ function serveStaticFile(reqPath, res) {
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+
+  if (requestUrl.pathname === "/health" && req.method === "GET") {
+    sendJson(res, 200, { status: "ok" });
+    return;
+  }
+
 
   if (requestUrl.pathname === "/api/events" && req.method === "GET") {
     const location = requestUrl.searchParams.get("location");
