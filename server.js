@@ -11,6 +11,7 @@ const USER_AGENT =
   "running-events-finder/1.1 (https://example.com; contact: admin@example.com)";
 const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
+
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -197,6 +198,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, { status: "ok" });
     return;
   }
+
 
   if (requestUrl.pathname === "/api/events" && req.method === "GET") {
     const location = requestUrl.searchParams.get("location");
