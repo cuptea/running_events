@@ -41,10 +41,10 @@ Alternative (manual web service settings):
 
 ## API
 
-`GET /api/events?location=<query>`
+`GET /api/events?location=<query>&maxDistanceMiles=<number>`
 
 Example:
 
 ```bash
-curl "http://localhost:3000/api/events?location=Seattle"
+curl "http://localhost:3000/api/events?location=Seattle&maxDistanceMiles=50"
 ```

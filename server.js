@@ -10,6 +10,7 @@ const USER_AGENT =
   process.env.APP_USER_AGENT ||
   "running-events-finder/1.2 (+https://github.com/example/running-events; contact: support@running-events.local)";
 const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_MAX_DISTANCE_MILES = 50;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -251,10 +252,20 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/events" && req.method === "GET") {
     const location = requestUrl.searchParams.get("location");
+    const maxDistanceMiles = Number(
+      requestUrl.searchParams.get("maxDistanceMiles") || DEFAULT_MAX_DISTANCE_MILES
+    );
 
     if (!location) {
       sendJson(res, 400, {
         error: "Please provide a location query parameter, e.g. /api/events?location=Boston",
+      });
+      return;
+    }
+
+    if (!Number.isFinite(maxDistanceMiles) || maxDistanceMiles <= 0) {
+      sendJson(res, 400, {
+        error: "maxDistanceMiles must be a positive number.",
       });
       return;
     }
@@ -265,7 +276,7 @@ const server = http.createServer(async (req, res) => {
         fetchParkrunEvents(),
       ]);
 
-      const withDistance = allEvents
+      const rankedEvents = allEvents
         .map((event) => {
           const distanceMiles = haversineMiles(
             place.latitude,
@@ -280,13 +291,18 @@ const server = http.createServer(async (req, res) => {
             nextEventDate: getNextSaturdayDate(),
           };
         })
-        .sort((a, b) => a.distanceMiles - b.distanceMiles)
+        .sort((a, b) => a.distanceMiles - b.distanceMiles);
+
+      const nearbyEvents = rankedEvents
+        .filter((event) => event.distanceMiles <= maxDistanceMiles)
         .slice(0, 25);
 
       sendJson(res, 200, {
         location: place,
-        events: withDistance,
+        events: nearbyEvents,
         source: "parkrun global events directory",
+        maxDistanceMiles,
+        message: nearbyEvents.length ? undefined : "No running events found nearby.",
       });
       return;
     } catch (error) {

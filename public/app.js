@@ -51,7 +51,9 @@ form.addEventListener("submit", async (event) => {
       throw new Error(payload.error || "Could not load events.");
     }
 
-    statusEl.textContent = `Showing events near ${payload.location.displayName}`;
+    statusEl.textContent = payload.message
+      ? payload.message
+      : `Showing events near ${payload.location.displayName}`;
     renderEvents(payload.events);
   } catch (error) {
     statusEl.textContent = "";
