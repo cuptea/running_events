@@ -8,7 +8,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const PARKRUN_EVENTS_URL = "https://images.parkrun.com/events.json";
 const USER_AGENT =
   process.env.APP_USER_AGENT ||
-  "running-events-finder/1.1 (https://example.com; contact: admin@example.com)";
+  "running-events-finder/1.2 (+https://github.com/example/running-events; contact: support@running-events.local)";
 const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 const MIME_TYPES = {
@@ -66,7 +66,7 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function geocodeLocation(location) {
+async function geocodeWithNominatim(location) {
   const geocodeURL = new URL("https://nominatim.openstreetmap.org/search");
   geocodeURL.searchParams.set("q", location);
   geocodeURL.searchParams.set("format", "jsonv2");
@@ -80,12 +80,12 @@ async function geocodeLocation(location) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to geocode location.");
+    throw new Error(`Nominatim geocoding failed (${response.status}).`);
   }
 
   const results = await response.json();
   if (!Array.isArray(results) || results.length === 0) {
-    throw new Error("Location not found. Try a more specific city or region.");
+    throw new Error("Location not found in Nominatim.");
   }
 
   const topResult = results[0];
@@ -94,6 +94,57 @@ async function geocodeLocation(location) {
     longitude: Number(topResult.lon),
     displayName: topResult.display_name,
   };
+}
+
+async function geocodeWithOpenMeteo(location) {
+  const geocodeURL = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  geocodeURL.searchParams.set("name", location);
+  geocodeURL.searchParams.set("count", "1");
+  geocodeURL.searchParams.set("language", "en");
+  geocodeURL.searchParams.set("format", "json");
+
+  const response = await fetch(geocodeURL, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Open-Meteo geocoding failed (${response.status}).`);
+  }
+
+  const payload = await response.json();
+  const results = payload?.results || [];
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error("Location not found in Open-Meteo geocoder.");
+  }
+
+  const topResult = results[0];
+  return {
+    latitude: Number(topResult.latitude),
+    longitude: Number(topResult.longitude),
+    displayName: [
+      topResult.name,
+      topResult.admin1,
+      topResult.country,
+    ]
+      .filter(Boolean)
+      .join(", "),
+  };
+}
+
+async function geocodeLocation(location) {
+  try {
+    return await geocodeWithNominatim(location);
+  } catch (nominatimError) {
+    try {
+      return await geocodeWithOpenMeteo(location);
+    } catch (fallbackError) {
+      throw new Error(
+        `Failed to geocode location. ${nominatimError.message} ${fallbackError.message}`
+      );
+    }
+  }
 }
 
 function inferDetailUrl(event, country) {

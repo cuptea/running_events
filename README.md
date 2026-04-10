@@ -5,7 +5,7 @@ A small web app where users can enter a city/location and get upcoming nearby ru
 ## What it does
 
 - Accepts a free-form location (city, neighborhood, country, etc.).
-- Geocodes the location using OpenStreetMap Nominatim.
+- Geocodes the location using OpenStreetMap Nominatim (with Open-Meteo geocoder fallback).
 - Pulls global running event data from parkrun's public events directory.
 - Computes nearest events and returns the top 25 nearest options.
 - Shows the next scheduled weekly event date (next Saturday).
