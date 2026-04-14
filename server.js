@@ -5,9 +5,12 @@ const { URL } = require("url");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-const DEFAULT_COUNTRY = "Germany";
-const USER_AGENT = process.env.USER_AGENT || "running-events-finder/1.0 (contact: admin@example.com)";
+const PARKRUN_EVENTS_URL = "https://images.parkrun.com/events.json";
+const USER_AGENT =
+  process.env.APP_USER_AGENT ||
+  "running-events-finder/1.1 (https://example.com; contact: admin@example.com)";
+const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -19,12 +22,140 @@ const MIME_TYPES = {
   ".jpg": "image/jpeg",
 };
 
+const eventCache = {
+  events: null,
+  fetchedAt: 0,
+};
+
+function toRadians(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const earthRadiusMiles = 3958.8;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+  const c = 2 * Math.asin(Math.sqrt(a));
+  return earthRadiusMiles * c;
+}
+
+function getNextSaturdayDate() {
+  const now = new Date();
+  const currentDay = now.getUTCDay();
+  const saturday = 6;
+  const daysUntilSaturday = (saturday - currentDay + 7) % 7 || 7;
+
+  const nextSaturday = new Date(now);
+  nextSaturday.setUTCDate(now.getUTCDate() + daysUntilSaturday);
+  nextSaturday.setUTCHours(9, 0, 0, 0);
+
+  return nextSaturday.toISOString();
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
   });
   res.end(JSON.stringify(payload));
+}
+
+async function geocodeLocation(location) {
+  const geocodeURL = new URL("https://nominatim.openstreetmap.org/search");
+  geocodeURL.searchParams.set("q", location);
+  geocodeURL.searchParams.set("format", "jsonv2");
+  geocodeURL.searchParams.set("limit", "1");
+
+  const response = await fetch(geocodeURL, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to geocode location.");
+  }
+
+  const results = await response.json();
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error("Location not found. Try a more specific city or region.");
+  }
+
+  const topResult = results[0];
+  return {
+    latitude: Number(topResult.lat),
+    longitude: Number(topResult.lon),
+    displayName: topResult.display_name,
+  };
+}
+
+function inferDetailUrl(event, country) {
+  if (event?.url) {
+    return event.url;
+  }
+
+  if (event?.website) {
+    return event.website;
+  }
+
+  const host = country?.urlFragment ? `parkrun.${country.urlFragment}` : "parkrun.com";
+  const shortname = event?.shortname || "";
+  return `https://www.${host}/${shortname}`;
+}
+
+async function fetchParkrunEvents() {
+  const now = Date.now();
+  if (eventCache.events && now - eventCache.fetchedAt < EVENT_CACHE_TTL_MS) {
+    return eventCache.events;
+  }
+
+  const response = await fetch(PARKRUN_EVENTS_URL, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not fetch running events at the moment.");
+  }
+
+  const data = await response.json();
+  const events = [];
+
+  for (const countryName of Object.keys(data?.countries || {})) {
+    const country = data.countries[countryName];
+    const eventList = country?.events || {};
+
+    for (const eventName of Object.keys(eventList)) {
+      const event = eventList[eventName];
+      if (!event?.lat || !event?.lon || !event?.shortname) {
+        continue;
+      }
+
+      events.push({
+        id: `${countryName}-${event.shortname}`,
+        name: event.name || eventName,
+        country: countryName,
+        latitude: Number(event.lat),
+        longitude: Number(event.lon),
+        detailUrl: inferDetailUrl(event, country),
+      });
+    }
+  }
+
+  eventCache.events = events;
+  eventCache.fetchedAt = now;
+
+  return events;
 }
 
 function serveStaticFile(reqPath, res) {
@@ -60,130 +191,6 @@ function serveStaticFile(reqPath, res) {
   });
 }
 
-async function geocodeLocation(location) {
-  const geocodeUrl = new URL("https://nominatim.openstreetmap.org/search");
-  geocodeUrl.searchParams.set("q", `${location}, ${DEFAULT_COUNTRY}`);
-  geocodeUrl.searchParams.set("format", "jsonv2");
-  geocodeUrl.searchParams.set("limit", "1");
-
-  try {
-    const response = await fetch(geocodeUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Geocoding request failed (${response.status})`);
-    }
-
-    const results = await response.json();
-    if (!Array.isArray(results) || !results.length) {
-      throw new Error("No geocoding results");
-    }
-
-    const lat = Number(results[0].lat);
-    const lon = Number(results[0].lon);
-
-    if (Number.isNaN(lat) || Number.isNaN(lon)) {
-      throw new Error("Invalid geocoding coordinates");
-    }
-
-    return {
-      lat,
-      lon,
-      displayName: results[0].display_name || `${location}, ${DEFAULT_COUNTRY}`,
-    };
-  } catch (_error) {
-    throw new Error("Failed to geocode location.");
-  }
-}
-
-function extractDate(text) {
-  if (!text) {
-    return null;
-  }
-
-  const ddmmyyyy = text.match(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})\b/);
-  if (ddmmyyyy) {
-    const day = ddmmyyyy[1].padStart(2, "0");
-    const month = ddmmyyyy[2].padStart(2, "0");
-    return `${ddmmyyyy[3]}-${month}-${day}`;
-  }
-
-  const yyyymmdd = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
-  if (yyyymmdd) {
-    return `${yyyymmdd[1]}-${yyyymmdd[2]}-${yyyymmdd[3]}`;
-  }
-
-  return null;
-}
-
-async function searchGermanyRunningEvents(location, geocode, limit = 10) {
-  if (!GOOGLE_API_KEY) {
-    throw new Error("Google Places API is not configured. Set GOOGLE_API_KEY environment variable.");
-  }
-
-  const clampedLimit = Math.min(Math.max(limit, 1), 10);
-  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": GOOGLE_API_KEY,
-      "X-Goog-FieldMask": [
-        "places.id",
-        "places.displayName",
-        "places.formattedAddress",
-        "places.shortFormattedAddress",
-        "places.websiteUri",
-        "places.googleMapsUri",
-        "places.editorialSummary",
-      ].join(","),
-    },
-    body: JSON.stringify({
-      textQuery: `running event ${location} ${DEFAULT_COUNTRY}`,
-      languageCode: "de",
-      regionCode: "DE",
-      locationBias: {
-        circle: {
-          center: {
-            latitude: geocode.lat,
-            longitude: geocode.lon,
-          },
-          radius: 30000,
-        },
-      },
-      maxResultCount: clampedLimit,
-    }),
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Google Places API request failed (${response.status}): ${details}`);
-  }
-
-  const payload = await response.json();
-  const places = payload.places || [];
-
-  return places.map((place, index) => {
-    const placeName = place.displayName?.text || `Running event ${index + 1}`;
-    const summary = place.editorialSummary?.text || place.shortFormattedAddress || "";
-    const rawDate = extractDate(`${placeName} ${summary}`);
-
-    return {
-      id: place.id || `place-${index + 1}`,
-      name: placeName,
-      country: DEFAULT_COUNTRY,
-      city: location,
-      summary,
-      nextEventDate: rawDate,
-      detailUrl: place.websiteUri || place.googleMapsUri || null,
-      source: "Google Places API",
-      address: place.formattedAddress || place.shortFormattedAddress || null,
-    };
-  });
-}
-
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
 
@@ -192,29 +199,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+
   if (requestUrl.pathname === "/api/events" && req.method === "GET") {
     const location = requestUrl.searchParams.get("location");
 
     if (!location) {
       sendJson(res, 400, {
-        error: "Please provide a location query parameter, e.g. /api/events?location=Munich",
+        error: "Please provide a location query parameter, e.g. /api/events?location=Boston",
       });
       return;
     }
 
     try {
-      const geocode = await geocodeLocation(location);
-      const events = await searchGermanyRunningEvents(location, geocode, 10);
+      const [place, allEvents] = await Promise.all([
+        geocodeLocation(location),
+        fetchParkrunEvents(),
+      ]);
+
+      const withDistance = allEvents
+        .map((event) => {
+          const distanceMiles = haversineMiles(
+            place.latitude,
+            place.longitude,
+            event.latitude,
+            event.longitude
+          );
+
+          return {
+            ...event,
+            distanceMiles,
+            nextEventDate: getNextSaturdayDate(),
+          };
+        })
+        .sort((a, b) => a.distanceMiles - b.distanceMiles)
+        .slice(0, 25);
 
       sendJson(res, 200, {
-        location: {
-          displayName: geocode.displayName,
-          lat: geocode.lat,
-          lon: geocode.lon,
-        },
-        events,
-        source: "Google Places API",
-        message: events.length ? undefined : "No running events found nearby.",
+        location: place,
+        events: withDistance,
+        source: "parkrun global events directory",
       });
       return;
     } catch (error) {
