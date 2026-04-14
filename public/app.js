@@ -14,23 +14,48 @@ function formatDate(isoDate) {
 
 function renderEvents(events) {
   if (!events.length) {
-    resultsEl.innerHTML = "<p>No running events found nearby.</p>";
+    const emptyState = document.createElement("p");
+    emptyState.textContent = "No running events found nearby.";
+    resultsEl.replaceChildren(emptyState);
     return;
   }
 
-  resultsEl.innerHTML = events
-    .map(
-      (event) => `
-      <article class="card">
-        <h2>${event.name}</h2>
-        <p><strong>Country:</strong> ${event.country}</p>
-        <p><strong>Distance:</strong> ${event.distanceMiles.toFixed(1)} miles</p>
-        <p><strong>Next event:</strong> ${formatDate(event.nextEventDate)}</p>
-        <p><a href="${event.detailUrl}" target="_blank" rel="noreferrer">Event details</a></p>
-      </article>
-    `
-    )
-    .join("");
+  const cards = events.map((eventData) => {
+    const card = document.createElement("article");
+    card.className = "card";
+
+    const title = document.createElement("h2");
+    title.textContent = eventData.name;
+    card.appendChild(title);
+
+    const country = document.createElement("p");
+    country.innerHTML = `<strong>Country:</strong> `;
+    country.append(document.createTextNode(eventData.country));
+    card.appendChild(country);
+
+    const distance = document.createElement("p");
+    distance.innerHTML = `<strong>Distance:</strong> `;
+    distance.append(document.createTextNode(`${eventData.distanceMiles.toFixed(1)} miles`));
+    card.appendChild(distance);
+
+    const nextEvent = document.createElement("p");
+    nextEvent.innerHTML = `<strong>Next event:</strong> `;
+    nextEvent.append(document.createTextNode(formatDate(eventData.nextEventDate)));
+    card.appendChild(nextEvent);
+
+    const details = document.createElement("p");
+    const link = document.createElement("a");
+    link.href = eventData.detailUrl;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = "Event details";
+    details.appendChild(link);
+    card.appendChild(details);
+
+    return card;
+  });
+
+  resultsEl.replaceChildren(...cards);
 }
 
 form.addEventListener("submit", async (event) => {
@@ -59,6 +84,8 @@ form.addEventListener("submit", async (event) => {
     renderEvents(payload.events);
   } catch (error) {
     statusEl.textContent = "";
-    resultsEl.innerHTML = `<p>${error.message}</p>`;
+    const errorMessage = document.createElement("p");
+    errorMessage.textContent = error.message;
+    resultsEl.replaceChildren(errorMessage);
   }
 });

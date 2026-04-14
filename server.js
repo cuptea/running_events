@@ -215,6 +215,7 @@ const server = http.createServer(async (req, res) => {
         geocodeLocation(location),
         fetchParkrunEvents(),
       ]);
+      const nextEventDate = getNextSaturdayDate();
 
       const withDistance = allEvents
         .map((event) => {
@@ -228,7 +229,7 @@ const server = http.createServer(async (req, res) => {
           return {
             ...event,
             distanceMiles,
-            nextEventDate: getNextSaturdayDate(),
+            nextEventDate,
           };
         })
         .sort((a, b) => a.distanceMiles - b.distanceMiles)
