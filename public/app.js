@@ -4,17 +4,11 @@ const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
 
 function formatDate(isoDate) {
-  if (!isoDate) {
-    return "Date not listed";
-  }
-
   const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) {
-    return isoDate;
-  }
-
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat(undefined, {
     dateStyle: "full",
+    timeStyle: "short",
+
   }).format(date);
 }
 
@@ -30,10 +24,8 @@ function renderEvents(events) {
       <article class="card">
         <h2>${event.name}</h2>
         <p><strong>Country:</strong> ${event.country}</p>
-        <p><strong>City:</strong> ${event.city}</p>
+        <p><strong>Distance:</strong> ${event.distanceMiles.toFixed(1)} miles</p>
         <p><strong>Next event:</strong> ${formatDate(event.nextEventDate)}</p>
-        <p>${event.summary || "No description available."}</p>
-        <p><strong>Source:</strong> ${event.source}</p>
         <p><a href="${event.detailUrl}" target="_blank" rel="noreferrer">Event details</a></p>
       </article>
     `
@@ -49,7 +41,8 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  statusEl.textContent = "Searching for running events in Germany...";
+
+  statusEl.textContent = "Searching for running events...";
   resultsEl.innerHTML = "";
 
   try {
@@ -60,9 +53,9 @@ form.addEventListener("submit", async (event) => {
       throw new Error(payload.error || "Could not load events.");
     }
 
-    statusEl.textContent = payload.message
-      ? payload.message
-      : `Showing events for ${payload.location.displayName}`;
+
+    statusEl.textContent = `Showing events near ${payload.location.displayName}`;
+
     renderEvents(payload.events);
   } catch (error) {
     statusEl.textContent = "";
