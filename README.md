@@ -1,5 +1,6 @@
 # Running Events Finder
 
+
 A small web app where users can enter a city/location and get upcoming nearby running events.
 
 ## What it does
@@ -38,6 +39,7 @@ Alternative (manual web service settings):
 
 - Start command: `npm start`
 - Port: provided by `PORT` environment variable.
+
 
 ## API
 

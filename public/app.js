@@ -8,6 +8,7 @@ function formatDate(isoDate) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "full",
     timeStyle: "short",
+
   }).format(date);
 }
 
@@ -40,6 +41,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+
   statusEl.textContent = "Searching for running events...";
   resultsEl.innerHTML = "";
 
@@ -51,7 +53,9 @@ form.addEventListener("submit", async (event) => {
       throw new Error(payload.error || "Could not load events.");
     }
 
+
     statusEl.textContent = `Showing events near ${payload.location.displayName}`;
+
     renderEvents(payload.events);
   } catch (error) {
     statusEl.textContent = "";
