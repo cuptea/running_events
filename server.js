@@ -6,9 +6,11 @@ const { URL } = require("url");
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const PARKRUN_EVENTS_URL = "https://images.parkrun.com/events.json";
+const DEFAULT_USER_AGENT =
+  "running-events-finder/1.2 (+https://github.com/; contact: support@running-events-finder.local)";
 const USER_AGENT =
   process.env.APP_USER_AGENT ||
-  "running-events-finder/1.1 (https://example.com; contact: admin@example.com)";
+  DEFAULT_USER_AGENT;
 const EVENT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 
@@ -67,13 +69,14 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function geocodeLocation(location) {
-  const geocodeURL = new URL("https://nominatim.openstreetmap.org/search");
-  geocodeURL.searchParams.set("q", location);
-  geocodeURL.searchParams.set("format", "jsonv2");
-  geocodeURL.searchParams.set("limit", "1");
+function createHttpError(message, statusCode = 500) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
 
-  const response = await fetch(geocodeURL, {
+async function fetchJsonWithHeaders(url) {
+  const response = await fetch(url, {
     headers: {
       "User-Agent": USER_AGENT,
       Accept: "application/json",
@@ -81,12 +84,21 @@ async function geocodeLocation(location) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to geocode location.");
+    throw createHttpError(`Geocoding provider returned status ${response.status}.`, 502);
   }
 
-  const results = await response.json();
+  return response.json();
+}
+
+async function geocodeWithNominatim(location) {
+  const geocodeURL = new URL("https://nominatim.openstreetmap.org/search");
+  geocodeURL.searchParams.set("q", location);
+  geocodeURL.searchParams.set("format", "jsonv2");
+  geocodeURL.searchParams.set("limit", "1");
+
+  const results = await fetchJsonWithHeaders(geocodeURL);
   if (!Array.isArray(results) || results.length === 0) {
-    throw new Error("Location not found. Try a more specific city or region.");
+    return null;
   }
 
   const topResult = results[0];
@@ -95,6 +107,50 @@ async function geocodeLocation(location) {
     longitude: Number(topResult.lon),
     displayName: topResult.display_name,
   };
+}
+
+async function geocodeWithOpenMeteo(location) {
+  const geocodeURL = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  geocodeURL.searchParams.set("name", location);
+  geocodeURL.searchParams.set("count", "1");
+  geocodeURL.searchParams.set("language", "en");
+  geocodeURL.searchParams.set("format", "json");
+
+  const payload = await fetchJsonWithHeaders(geocodeURL);
+  if (!Array.isArray(payload?.results) || payload.results.length === 0) {
+    return null;
+  }
+
+  const topResult = payload.results[0];
+  const displayName = [topResult.name, topResult.admin1, topResult.country]
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    latitude: Number(topResult.latitude),
+    longitude: Number(topResult.longitude),
+    displayName,
+  };
+}
+
+async function geocodeLocation(location) {
+  const providers = [geocodeWithNominatim, geocodeWithOpenMeteo];
+
+  for (const geocode of providers) {
+    try {
+      const result = await geocode(location);
+      if (result) {
+        return result;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+
+  throw createHttpError(
+    "Location could not be geocoded right now. No API key is required; try a more specific place.",
+    502
+  );
 }
 
 function inferDetailUrl(event, country) {
@@ -242,7 +298,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     } catch (error) {
-      sendJson(res, 500, {
+      sendJson(res, error.statusCode || 500, {
         error: error.message || "Unexpected error while searching for events.",
       });
       return;
